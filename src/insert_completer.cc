@@ -4,6 +4,7 @@
 #include "buffer_utils.hh"
 #include "client.hh"
 #include "changes.hh"
+#include "command_manager.hh"
 #include "context.hh"
 #include "display_buffer.hh"
 #include "face_registry.hh"
@@ -289,7 +290,7 @@ InsertCompletion complete_option(const SelectionList& sels,
         using RankedMatch::operator==;
         using RankedMatch::operator<;
 
-        StringView docstring;
+        StringView command;
         DisplayLine menu_entry;
     };
 
@@ -299,7 +300,7 @@ InsertCompletion complete_option(const SelectionList& sels,
     {
         if (RankedMatchAndInfo match{std::get<0>(candidate), query})
         {
-            match.docstring = std::get<1>(candidate);
+            match.command = std::get<1>(candidate);
             auto& menu = std::get<2>(candidate);
             match.menu_entry = not menu.empty() ?
                 parse_display_line(expand_tabs(menu, tabstop, column), faces)
@@ -320,7 +321,7 @@ InsertCompletion complete_option(const SelectionList& sels,
     while (candidates.size() < max_count and first != last)
     {
         if (candidates.empty() or candidates.back().completion != first->candidate())
-            candidates.push_back({ first->candidate().str(), first->docstring.str(),
+            candidates.push_back({ first->candidate().str(), first->command.str(),
                                    std::move(first->menu_entry) });
         std::pop_heap(first, last--, greater);
     }
@@ -401,6 +402,7 @@ void InsertCompleter::select(int index, bool relative, Vector<Key>& keystrokes)
     if (m_current_candidate < 0)
         m_current_candidate += m_completions.candidates.size();
     const InsertCompletion::Candidate& candidate = m_completions.candidates[m_current_candidate];
+
     auto& selections = m_context.selections();
     const auto& cursor_pos = selections.main().cursor();
     const auto prefix_len = buffer.distance(m_completions.begin, cursor_pos);
@@ -434,14 +436,9 @@ void InsertCompleter::select(int index, bool relative, Vector<Key>& keystrokes)
     m_completions.begin = buffer.advance(cursor_pos, -candidate.completion.length());
     m_completions.timestamp = buffer.timestamp();
     if (m_context.has_client())
-    {
         m_context.client().menu_select(m_current_candidate);
-        if (not candidate.docstring.empty())
-            m_context.client().info_show(candidate.completion, candidate.docstring,
-                                         {}, InfoStyle::MenuDoc);
-        else
-            m_context.client().info_hide();
-    }
+    if (not candidate.command.empty())
+        CommandManager::instance().execute(candidate.command, m_context, {});
 
     for (auto i = 0_byte; i < prefix_len; ++i)
         keystrokes.emplace_back(Key::Backspace);
