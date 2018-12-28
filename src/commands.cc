@@ -2013,6 +2013,7 @@ const CommandDesc info_cmd = {
     ParameterDesc{
         { { "anchor",    { true, "set info anchoring <line>.<column>" } },
           { "placement", { true, "set placement relative to anchor (above, below)" } },
+          { "menu",      { false, "display info next to the menu" } },
           { "title",     { true, "set info title" } } },
         ParameterDesc::Flags::None, 0, 1
     },
@@ -2049,6 +2050,9 @@ const CommandDesc info_cmd = {
                         throw runtime_error(format("invalid placement: '{}'", *placement));
                 }
             }
+            else if (parser.get_switch("menu"))
+                style = InfoStyle::MenuDoc;
+
             auto title = parser.get_switch("title").value_or(StringView{});
             context.client().info_show(title.str(), parser[0], pos, style);
         }
