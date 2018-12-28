@@ -40,7 +40,7 @@ The syntaxic errors detected during parsing are shown when auto-diagnostics are 
 
             if [ "$1" = "-complete" ]; then
                 pos=-:${kak_cursor_line}:${kak_cursor_column}
-                header="${kak_cursor_line}.${kak_cursor_column}@${kak_timestamp}"
+                header="${kak_cursor_line}.${kak_cursor_column}@${kak_timestamp}:info"
                 compl=$(clang++ -x ${ft} -fsyntax-only ${kak_opt_clang_options} \
                     -Xclang -code-completion-brief-comments -Xclang -code-completion-at=${pos} - < ${dir}/buf 2> ${dir}/stderr |
                         awk -F ': ' '

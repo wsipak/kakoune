@@ -176,7 +176,7 @@ InsertCompletion complete_word(const SelectionList& sels,
         return true;
     });
 
-    return { std::move(candidates), word_begin, cursor_pos, buffer.timestamp() };
+    return { std::move(candidates), word_begin, cursor_pos, buffer.timestamp(), {} };
 }
 
 template<bool require_slash>
@@ -240,7 +240,7 @@ InsertCompletion complete_filename(const SelectionList& sels,
     }
     if (candidates.empty())
         return {};
-    return { std::move(candidates), begin.coord(), pos.coord(), buffer.timestamp() };
+    return { std::move(candidates), begin.coord(), pos.coord(), buffer.timestamp(), {} };
 }
 
 InsertCompletion complete_option(const SelectionList& sels,
@@ -256,7 +256,7 @@ InsertCompletion complete_option(const SelectionList& sels,
         return {};
 
     auto& desc = opt.prefix;
-    static const Regex re(R"((\d+)\.(\d+)(?:\+(\d+))?@(\d+))");
+    static const Regex re(R"((\d+)\.(\d+)(?:\+(\d+))?@(\d+)(?::(.*))?)");
     MatchResults<String::const_iterator> match;
     if (not regex_match(desc.begin(), desc.end(), match, re))
         return {};
@@ -278,6 +278,10 @@ InsertCompletion complete_option(const SelectionList& sels,
 
     if (cursor_pos.line != coord.line or cursor_pos.column < coord.column)
         return {};
+
+    String cleanup_command;
+    if (match[5].matched)
+        cleanup_command = String{match[5].first, match[5].second};
 
     StringView query = buffer.substr(coord, cursor_pos);
 
@@ -326,7 +330,7 @@ InsertCompletion complete_option(const SelectionList& sels,
         std::pop_heap(first, last--, greater);
     }
 
-    return { std::move(candidates), coord, end, timestamp };
+    return { std::move(candidates), coord, end, timestamp, std::move(cleanup_command) };
 }
 
 template<bool other_buffers>
@@ -376,7 +380,7 @@ InsertCompletion complete_line(const SelectionList& sels,
         return {};
     std::sort(candidates.begin(), candidates.end());
     candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
-    return { std::move(candidates), cursor_pos.line, cursor_pos, buffer.timestamp() };
+    return { std::move(candidates), cursor_pos.line, cursor_pos, buffer.timestamp(), {} };
 }
 
 }
@@ -396,6 +400,9 @@ void InsertCompleter::select(int index, bool relative, Vector<Key>& keystrokes)
 {
     if (not setup_ifn())
         return;
+
+    if (not m_completions.cleanup_command.empty())
+        CommandManager::instance().execute(m_completions.cleanup_command, m_context, {});
 
     auto& buffer = m_context.buffer();
     m_current_candidate = (relative ? m_current_candidate + index : index) % (int)m_completions.candidates.size();
@@ -470,6 +477,9 @@ void InsertCompleter::reset()
     if (m_explicit_completer or m_completions.is_valid())
     {
         m_explicit_completer = nullptr;
+        if (m_completions.is_valid() and not m_completions.cleanup_command.empty())
+            CommandManager::instance().execute(m_completions.cleanup_command, m_context, {});
+
         m_completions = InsertCompletion{};
         if (m_context.has_client())
         {

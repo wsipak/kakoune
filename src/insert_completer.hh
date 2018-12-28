@@ -70,6 +70,7 @@ struct InsertCompletion
     BufferCoord begin;
     BufferCoord end;
     size_t timestamp = 0;
+    String cleanup_command;
 
     bool is_valid() const { return not candidates.empty(); }
 };
