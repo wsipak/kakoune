@@ -107,6 +107,10 @@ public:
                                 const ShellContext& shell_context,
                                 BufferCoord pos = {});
 
+    StringView execute_partial(StringView command_line,
+                               Context& context,
+                               const ShellContext& shell_context = ShellContext{});
+
 
     Completions complete(const Context& context, CompletionFlags flags,
                          StringView command_line, ByteCount cursor_pos);

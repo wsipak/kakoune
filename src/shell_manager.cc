@@ -4,6 +4,7 @@
 #include "client.hh"
 #include "clock.hh"
 #include "context.hh"
+#include "command_manager.hh"
 #include "display_buffer.hh"
 #include "event_manager.hh"
 #include "face_registry.hh"
@@ -225,9 +226,9 @@ std::pair<String, int> ShellManager::eval(
 
     auto spawn_time = profile ? Clock::now() : Clock::time_point{};
 
-    Pipe child_stdin{not input.empty()}, child_stdout, child_stderr;
+    Pipe child_stdin{not input.empty()}, child_stdout, child_stderr, child_command;
     pid_t pid = spawn_shell(m_shell.c_str(), cmdline, shell_context.params, kak_env,
-                            [&child_stdin, &child_stdout, &child_stderr] {
+                            [&child_stdin, &child_stdout, &child_stderr, &child_command] {
         auto move = [](int oldfd, int newfd)
         {
             if (oldfd == newfd)
@@ -248,6 +249,7 @@ std::pair<String, int> ShellManager::eval(
 
         close(child_stderr.read_fd());
         move(child_stderr.write_fd(), 2);
+        move(child_command.write_fd(), 3);
     });
 
     child_stdin.close_read_fd();
@@ -260,6 +262,25 @@ std::pair<String, int> ShellManager::eval(
     auto stdout_reader = make_pipe_reader(child_stdout, stdout_contents);
     auto stderr_reader = make_pipe_reader(child_stderr, stderr_contents);
     auto stdin_writer = make_pipe_writer(child_stdin, input);
+
+    FDWatcher command_reader(child_command.read_fd(), FdEvents::Read, EventMode::Urgent,
+                             [commands=String{}, &pipe=child_command, &context, &shell_context]
+                             (FDWatcher& watcher, FdEvents, EventMode) mutable {
+        char buffer[1024];
+        while (fd_readable(pipe.read_fd()))
+        {
+            size_t size = ::read(pipe.read_fd(), buffer, 1024);
+            if (size <= 0)
+            {
+                pipe.close_read_fd();
+                watcher.disable();
+                CommandManager::instance().execute(commands, const_cast<Context&>(context), shell_context);
+                return;
+            }
+            commands += StringView{buffer, buffer+size};
+        }
+        commands = CommandManager::instance().execute_partial(commands, const_cast<Context&>(context)/*TODO*/, shell_context).str();
+    });
 
     // block SIGCHLD to make sure we wont receive it before
     // our call to pselect, that will end up blocking indefinitly.

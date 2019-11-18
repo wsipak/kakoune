@@ -571,6 +571,54 @@ void CommandManager::execute(StringView command_line,
     execute_single_command(params, context, shell_context, command_coord);
 }
 
+StringView CommandManager::execute_partial(StringView command_line,
+                                           Context& context, const ShellContext& shell_context)
+{
+    CommandParser parser(command_line);
+
+    BufferCoord command_coord;
+    const char* executed_pos = command_line.begin();
+    Vector<Token, MemoryDomain::Commands> tokens;
+    Vector<String, MemoryDomain::Commands> params;
+    try
+    {
+        while (Optional<Token> token_opt = parser.read_token(true))
+        {
+            auto& token = *token_opt;
+            if (params.empty())
+                command_coord = token.coord;
+
+            if (token.type == Token::Type::CommandSeparator)
+            {
+                for (auto& token : tokens)
+                {
+                    if (token.type == Token::Type::ArgExpand and token.content == '@')
+                        params.insert(params.end(), shell_context.params.begin(),
+                                      shell_context.params.end());
+                    else
+                    {
+                        auto tokens = expand_token<false>(token, context, shell_context);
+                        params.insert(params.end(),
+                                      std::make_move_iterator(tokens.begin()),
+                                      std::make_move_iterator(tokens.end()));
+                    }
+                }
+                execute_single_command(params, context, shell_context, command_coord);
+                executed_pos = parser.pos();
+                params.clear();
+                tokens.clear();
+            }
+            else
+                tokens.push_back(token);
+        }
+    }
+    catch (parse_error&)
+    {
+    }
+
+    return {executed_pos, command_line.end()};
+}
+
 Optional<CommandInfo> CommandManager::command_info(const Context& context, StringView command_line) const
 {
     CommandParser parser{command_line};
